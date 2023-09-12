@@ -36,8 +36,8 @@ listObjectsV2Lock = threading.Lock()
 # S3 configuration details
 S3_ENDPOINT = 'https://s3.us-east-1.lyvecloud.seagate.com'
 REGION_NAME = 'us-east-1'
-AWS_ACCESS_KEY = 'JKVX0K12MDUDWV5A'
-AWS_SECRET_KEY = 'M2M0SCTJ5CYNGVEGNMILJ3PFRGHH2QCE'
+AWS_ACCESS_KEY = ''
+AWS_SECRET_KEY = ''
 
 s3 = boto3.client('s3',
                   endpoint_url=S3_ENDPOINT,
