@@ -5,6 +5,7 @@
 #     "ReqDate","ReqHour","ReqMinute","ReqTime","tenant_id","datacenter","bucket_name","request_origin_ip","api_verb","UploadId","partNumber","ListPrefix","ListMaxKeys","objName","uri_config","ReqLength"
 
 import boto3
+from botocore.config import Config
 import csv
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -38,12 +39,21 @@ listObjectsLock = threading.Lock()
 listObjectsV2 = 0
 listObjectsV2Lock = threading.Lock()
 
+bucket_cache = set()
+bucket_cacheLock = threading.Lock()
+
+
+config = Config(
+    retries={'max_attempts': 10},
+    max_pool_connections=100  # Increase this based on your needs and resources
+)
 
 s3 = boto3.client('s3',
                   endpoint_url=S3_ENDPOINT,
                   region_name=REGION_NAME,
                   aws_access_key_id=AWS_ACCESS_KEY,
-                  aws_secret_access_key=AWS_SECRET_KEY)
+                  aws_secret_access_key=AWS_SECRET_KEY,
+                  config=config)
 
 def print_report():
     print(f"{datetime.now()} - Processed {totalRows} rows. New objects: {putObjects} of {putObjectsBytes} bytes; New Mpart objects: {mpartObjects} of {mpartObjectBytes} bytes; DeleteObject: {delObjects}; ListObjects: {listObjects}; ListObjectsV2: {listObjectsV2} ")
@@ -63,7 +73,8 @@ def upload_to_s3(bucket, obj_name, file_path):
 
 # Main worker function
 def process_row(row):
-    global totalRows,putObjects,putObjectsBytes,mpartObjects,mpartObjectBytes,delObjects,listObjects,listObjectsV2
+    global totalRows,putObjects,putObjectsBytes,mpartObjects,mpartObjectBytes,delObjects,listObjects,listObjectsV2,bucket_cache
+
     with totalRowsLock:
         totalRows += 1
 
@@ -72,11 +83,14 @@ def process_row(row):
     if bucket_name not in bucket_cache:
         try:
             s3.create_bucket(Bucket=bucket_name)
-            bucket_cache[bucket_name] = True
+            with bucket_cacheLock:
+                bucket_cache[bucket_name] = True
         except s3.exceptions.BucketAlreadyOwnedByYou:
-            bucket_cache[bucket_name] = True
+            with bucket_cacheLock:
+                bucket_cache[bucket_name] = True
         except s3.exceptions.BucketAlreadyExists:
-            bucket_cache[bucket_name] = True
+            with bucket_cacheLock:
+                bucket_cache[bucket_name] = True
         except Exception as err:
             print(f"Unexpected {err=}, {type(err)=}")
             raise
