@@ -238,6 +238,5 @@ if __name__ == "__main__":
 
         except Exception as err:
             print(f"Error completing multipart upload {uploadId}. {err=}")
-            raise
 
     print_report()
