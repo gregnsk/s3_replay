@@ -12,6 +12,12 @@ import sys
 import threading
 from datetime import datetime
 
+# S3 configuration details
+S3_ENDPOINT = 'https://s3.us-east-1.lyvecloud.seagate.com'
+REGION_NAME = 'us-east-1'
+AWS_ACCESS_KEY = ''
+AWS_SECRET_KEY = ''
+
 
 multipart_uploads = {}
 multipart_lock = threading.Lock()
@@ -32,12 +38,6 @@ listObjectsLock = threading.Lock()
 listObjectsV2 = 0
 listObjectsV2Lock = threading.Lock()
 
-
-# S3 configuration details
-S3_ENDPOINT = 'https://s3.us-east-1.lyvecloud.seagate.com'
-REGION_NAME = 'us-east-1'
-AWS_ACCESS_KEY = ''
-AWS_SECRET_KEY = ''
 
 s3 = boto3.client('s3',
                   endpoint_url=S3_ENDPOINT,
@@ -64,6 +64,7 @@ def upload_to_s3(bucket, obj_name, file_path):
 # Main worker function
 def process_row(row):
     global totalRows,putObjects,putObjectsBytes,mpartObjects,mpartObjectBytes,delObjects,listObjects,listObjectsV2
+    print_report();
     with totalRowsLock:
         totalRows += 1
 
@@ -109,7 +110,9 @@ def process_row(row):
                 multipart_uploads[row["UploadId"]] = {
                     "uploadId": upload_id,
                     "etags": [],
-                    "next_part_num": 2
+                    "next_part_num": 2,
+                    "bucket_name": row["bucket_name"],
+                    "objName": row["objName"]
                 }
             else:
                 # Get stored values
@@ -121,7 +124,7 @@ def process_row(row):
             file_path = create_temp_file(size)
             with open(file_path, 'rb') as file:
                response = s3.upload_part(Bucket=bucket_name, Key=row["objName"], PartNumber=part_num, UploadId=upload_id, Body=file)
-            multipart_uploads[row["UploadId"]]["etags"].append({'ETag': response['ETag'], 'PartNumber': part_num})
+            multipart_uploads[row["UploadId"]]["etags"].append({'ETag': response['ETag'], 'PartNumber': part_num, 'Size': size})
 
     elif row["api_verb"] == "CompleteMultipartUpload":
         with multipart_lock:
@@ -129,16 +132,23 @@ def process_row(row):
                 print("DEBUG: Unknown Multipart Upload")
             else:
                 # Complete the multipart upload
+                parts_for_completion = [{'ETag': part['ETag'], 'PartNumber': part['PartNumber']} for part in multipart_uploads[row["UploadId"]]["etags"]]
+
                 response = s3.complete_multipart_upload(
                     Bucket=bucket_name,
                     Key=row["objName"],
                     UploadId=multipart_uploads[row["UploadId"]]["uploadId"],
-                    MultipartUpload={'Parts': multipart_uploads[row["UploadId"]]["etags"]}
+                    MultipartUpload={'Parts': parts_for_completion}
                 )
                 with mpartObjectsLock:
                     mpartObjects += 1
                 with mpartObjectBytesLock:
-                    mpartObjectBytes += sum(int(part["Size"]) for part in multipart_uploads[row["UploadId"]]["etags"])
+                    try:
+                        mpartObjectBytes += sum(int(part["Size"]) for part in multipart_uploads[row["UploadId"]]["etags"])
+                    except Exception as err:
+                        print(f"Unexpected {err=}, {type(err)=}")
+                        raise
+
                 # Remove the completed upload from the dictionary
                 del multipart_uploads[row["UploadId"]]
 
@@ -147,19 +157,30 @@ def process_row(row):
         with listObjectsLock:
             listObjects += 1
         prefix = row.get("ListPrefix", "")
-        max_keys = int(row.get("ListMaxKeys", 1000))  # default to 1000 if not present
+        try:
+            max_keys = int(row.get("ListMaxKeys", 1000))
+        except ValueError:
+            max_keys = 1000
 
-        response = s3.list_objects(Bucket=bucket_name, Prefix=prefix, MaxKeys=max_keys)
-        #print(response.get("Contents", []))
+        try:
+             response = s3.list_objects(Bucket=bucket_name, Prefix=prefix, MaxKeys=max_keys)
+        except Exception as err:
+            print(f"Unexpected {err=}, {type(err)=}")
+            raise
+
+        #print("Contents: " + response.get("Contents", []))
 
     elif row["api_verb"] == "ListObjectsV2":
         with listObjectsV2Lock:
             listObjectsV2 += 1
         prefix = row.get("ListPrefix", "")
-        max_keys = int(row.get("ListMaxKeys", 1000))  # default to 1000 if not present
+        try:
+            max_keys = int(row.get("ListMaxKeys", 1000))
+        except ValueError:
+            max_keys = 1000
 
         response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix, MaxKeys=max_keys)
-        #print(response.get("Contents", []))
+        #print("Contents: " + response.get("Contents", []))
 
     if totalRows % rows_interval == 0:
         print_report()
@@ -183,5 +204,27 @@ if __name__ == "__main__":
         # Parallelizing the workload
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             executor.map(process_row, rows)
+
+    # Complete remaining multipart uploads
+    for uploadId, upload_data in multipart_uploads.items():
+        try:
+            bucket_name = "test-" + upload_data["bucket_name"]
+            parts_for_completion = [{'ETag': part['ETag'], 'PartNumber': part['PartNumber']} for part in upload_data["etags"]]
+
+            response = s3.complete_multipart_upload(
+                Bucket=bucket_name,
+                Key=upload_data["objName"],
+                UploadId=upload_data["uploadId"],
+                MultipartUpload={'Parts': parts_for_completion}
+            )
+            # Increment the multipart objects count
+            mpartObjects += 1
+
+            # Calculate the total bytes for this multipart object
+            mpartObjectBytes += sum(int(part["Size"]) for part in upload_data["etags"])
+
+        except Exception as err:
+            print(f"Error completing multipart upload {uploadId}. {err=}")
+            raise
 
     print_report()
