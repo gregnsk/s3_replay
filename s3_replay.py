@@ -64,7 +64,6 @@ def upload_to_s3(bucket, obj_name, file_path):
 # Main worker function
 def process_row(row):
     global totalRows,putObjects,putObjectsBytes,mpartObjects,mpartObjectBytes,delObjects,listObjects,listObjectsV2
-    print_report();
     with totalRowsLock:
         totalRows += 1
 
