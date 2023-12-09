@@ -38,6 +38,9 @@ listObjects = 0
 listObjectsLock = threading.Lock()
 listObjectsV2 = 0
 listObjectsV2Lock = threading.Lock()
+headObjects = 0
+headObjectsLock = threading.Lock()
+
 
 bucket_cache = set()
 bucket_cacheLock = threading.Lock()
@@ -56,7 +59,7 @@ s3 = boto3.client('s3',
                   config=config)
 
 def print_report():
-    print(f"{datetime.now()} - Processed {totalRows} rows. New objects: {putObjects} of {putObjectsBytes} bytes; New Mpart objects: {mpartObjects} of {mpartObjectBytes} bytes; DeleteObject: {delObjects}; ListObjects: {listObjects}; ListObjectsV2: {listObjectsV2} ")
+    print(f"{datetime.now()} - Processed {totalRows} rows. New objects: {putObjects} of {putObjectsBytes} bytes; New Mpart objects: {mpartObjects} of {mpartObjectBytes} bytes; DeleteObject: {delObjects}; ListObjects: {listObjects}; ListObjectsV2: {listObjectsV2}; HeadObjects: {headObjects} ")
 
 # File creation
 def create_temp_file(size):
@@ -73,7 +76,7 @@ def upload_to_s3(bucket, obj_name, file_path):
 
 # Main worker function
 def process_row(row):
-    global totalRows,putObjects,putObjectsBytes,mpartObjects,mpartObjectBytes,delObjects,listObjects,listObjectsV2,bucket_cache
+    global totalRows,putObjects,putObjectsBytes,mpartObjects,mpartObjectBytes,delObjects,listObjects,listObjectsV2,headObjects,bucket_cache
 
     with totalRowsLock:
         totalRows += 1
@@ -110,6 +113,8 @@ def process_row(row):
         except s3.exceptions.NoSuchKey:
             #print(f"Object {row['objName']} not found in bucket {bucket_name}")
             pass
+        with headObjectsLock:
+            headObjects += 1
     elif row["api_verb"] == "DeleteObject":
         try:
             s3.delete_object(Bucket=bucket_name, Key=row["objName"])
