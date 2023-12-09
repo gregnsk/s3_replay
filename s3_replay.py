@@ -109,6 +109,7 @@ def process_row(row):
             #print(f"Metadata for {row['objName']} in {bucket_name}: {response['Metadata']}")
         except s3.exceptions.NoSuchKey:
             #print(f"Object {row['objName']} not found in bucket {bucket_name}")
+            pass
     elif row["api_verb"] == "DeleteObject":
         try:
             s3.delete_object(Bucket=bucket_name, Key=row["objName"])
