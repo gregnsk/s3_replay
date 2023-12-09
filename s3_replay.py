@@ -103,6 +103,12 @@ def process_row(row):
             putObjects += 1
         with putObjectsBytesLock:
             putObjectsBytes += size
+    elif row["api_verb"] == "HeadObject":
+        try:
+            response = s3.head_object(Bucket=bucket_name, Key=row["objName"])
+            #print(f"Metadata for {row['objName']} in {bucket_name}: {response['Metadata']}")
+        except s3.exceptions.NoSuchKey:
+            #print(f"Object {row['objName']} not found in bucket {bucket_name}")
     elif row["api_verb"] == "DeleteObject":
         try:
             s3.delete_object(Bucket=bucket_name, Key=row["objName"])

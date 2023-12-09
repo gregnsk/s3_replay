@@ -5,7 +5,7 @@ This tool is designed to read a CSV file containing S3 request traffic and repla
 ## Features:
 
 - Reads S3 traffic data from a CSV file.
-- Replays `PutObject`, `DeleteObject`, `UploadPart`, `CompleteMultipartUpload`, `ListObjects`, and `ListObjectsV2` operations.
+- Replays `PutObject`, `DeleteObject`, `UploadPart`, `CompleteMultipartUpload`, `ListObjects`, `ListObjectsV2`, `HeadObject` operations.
 - Supports concurrent operations using threading.
 - Uses local caching to avoid repeated S3 operations (like bucket existence checks).
 - Efficient temporary file creation for object puts.
